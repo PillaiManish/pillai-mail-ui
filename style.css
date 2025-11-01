@@ -20,7 +20,7 @@ body {
 
 #main-container {
     max-width: 1200px;
-    height: 90vh; /* Give the main container a height */
+    height: 90vh;
     display: none; /* Initially hidden */
 }
 
@@ -83,7 +83,7 @@ header {
 
 #content-area {
     display: flex;
-    height: calc(100% - 80px); /* Adjust to fill the container */
+    height: calc(100% - 80px);
 }
 
 #email-list-container {
@@ -122,19 +122,32 @@ header {
     color: #0366d6;
 }
 
-#email-list .email-from {
+#email-list .email-participants {
     color: #586069;
     font-size: 14px;
 }
 
-#email-content {
-    height: 100%;
-    width: 100%;
+.email-in-thread {
+    border: 1px solid #d1d5da;
+    border-radius: 6px;
+    margin-bottom: 20px;
 }
 
-#email-content pre {
+.email-thread-header {
+    background-color: #f6f8fa;
+    padding: 10px 15px;
+    border-bottom: 1px solid #d1d5da;
+    font-size: 14px;
+    color: #586069;
+}
+
+.email-thread-body {
+    padding: 15px;
+}
+
+.email-thread-body pre {
     white-space: pre-wrap;
-    font-family: inherit; /* Use the body font */
+    font-family: inherit;
     font-size: 16px;
     line-height: 1.6;
     color: #24292e;

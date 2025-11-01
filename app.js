@@ -4,16 +4,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginForm = document.getElementById('login-form');
     const loginError = document.getElementById('login-error');
     const emailList = document.getElementById('email-list');
-    const emailContent = document.getElementById('email-content');
+    const emailViewContainer = document.getElementById('email-view-container');
     const logoutButton = document.getElementById('logout-button');
 
     const API_URL = 'http://pillaimanish.cloud:8081/api/auth';
+
+    let conversations = [];
 
     // Check for a stored token on page load
     const token = localStorage.getItem('jwt');
     if (token) {
         showMainView();
-        fetchEmails();
+        fetchConversations();
     }
 
     // --- Event Listeners ---
@@ -37,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             localStorage.setItem('jwt', data.token);
             showMainView();
-            fetchEmails();
+            fetchConversations();
         } catch (error) {
             loginError.textContent = error.message;
         }
@@ -54,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loginContainer.style.display = 'block';
         mainContainer.style.display = 'none';
         emailList.innerHTML = '';
-        emailContent.innerHTML = '';
+        emailViewContainer.innerHTML = '';
         loginError.textContent = '';
     }
 
@@ -65,19 +67,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- API Functions ---
 
-    async function fetchEmails() {
+    async function fetchConversations() {
         try {
             const token = localStorage.getItem('jwt');
+            // *** FIX: Corrected the endpoint from /conversations to /emails ***
             const response = await fetch(`${API_URL}/emails`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
 
             if (!response.ok) {
-                throw new Error('Failed to fetch emails.');
+                throw new Error('Failed to fetch conversations.');
             }
 
-            const emails = await response.json();
-            displayEmails(emails);
+            conversations = await response.json();
+            displayConversations(conversations);
         } catch (error) {
             console.error(error);
             if (String(error).includes('401')) {
@@ -86,34 +89,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function displayEmails(emails) {
+    function displayConversations(conversations) {
         emailList.innerHTML = ''; // Clear previous list
-        if (!emails || emails.length === 0) {
-            emailList.innerHTML = '<li>No emails found.</li>';
+        if (!conversations || conversations.length === 0) {
+            emailList.innerHTML = '<li>No conversations found.</li>';
             return;
         }
 
-        emails.forEach(email => {
+        conversations.forEach(convo => {
             const li = document.createElement('li');
-            li.dataset.id = email.ID;
+            li.dataset.id = convo.ID;
 
             const subject = document.createElement('div');
             subject.className = 'email-subject';
-            subject.textContent = email.subject || '(No Subject)';
+            subject.textContent = convo.subject || '(No Subject)';
 
-            const from = document.createElement('div');
-            from.className = 'email-from';
-            from.textContent = `From: ${email.from}`;
+            const participants = document.createElement('div');
+            participants.className = 'email-participants';
+            // A real implementation would be more robust
+            participants.textContent = convo.emails[0]?.from || 'Unknown Sender';
 
             li.appendChild(subject);
-            li.appendChild(from);
+            li.appendChild(participants);
 
-            li.addEventListener('click', () => fetchEmailContent(email.ID));
+            li.addEventListener('click', () => displayConversation(convo.ID));
             emailList.appendChild(li);
         });
     }
 
-    async function fetchEmailContent(emailId) {
+    function displayConversation(convoId) {
+        const conversation = conversations.find(c => c.ID === convoId);
+        if (!conversation) return;
+
+        emailViewContainer.innerHTML = ''; // Clear previous view
+
+        conversation.emails.forEach(email => {
+            const emailContainer = document.createElement('div');
+            emailContainer.className = 'email-in-thread';
+
+            const header = document.createElement('div');
+            header.className = 'email-thread-header';
+            header.innerHTML = `<b>From:</b> ${email.from}<br><b>To:</b> ${email.to}<br><b>Subject:</b> ${email.subject}`;
+
+            const body = document.createElement('div');
+            body.className = 'email-thread-body';
+
+            emailContainer.appendChild(header);
+            emailContainer.appendChild(body);
+            emailViewContainer.appendChild(emailContainer);
+
+            // Fetch and render the body for each email
+            fetchEmailContent(email.ID, body);
+        });
+    }
+
+    async function fetchEmailContent(emailId, targetElement) {
         try {
             const token = localStorage.getItem('jwt');
             const response = await fetch(`${API_URL}/emails/${emailId}`, {
@@ -125,15 +155,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const rawEmail = await response.text();
-            renderEmail(rawEmail);
+            renderEmail(rawEmail, targetElement);
         } catch (error) {
             console.error('Error fetching or rendering email:', error);
-            emailContent.innerHTML = '<p>Could not load email content.</p>';
+            targetElement.innerHTML = '<p>Could not load email content.</p>';
         }
     }
 
-    function renderEmail(rawEmail) {
-        emailContent.innerHTML = ''; // Clear previous content
+    function renderEmail(rawEmail, targetElement) {
+        targetElement.innerHTML = ''; // Clear previous content
 
         function escapeRegex(string) {
             return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -181,9 +211,9 @@ document.addEventListener('DOMContentLoaded', () => {
             iframe.setAttribute('sandbox', 'allow-same-origin');
             iframe.srcdoc = htmlBody;
             iframe.style.width = '100%';
-            iframe.style.height = '100%';
+            iframe.style.height = '400px'; // Give a fixed height for now
             iframe.style.border = 'none';
-            emailContent.appendChild(iframe);
+            targetElement.appendChild(iframe);
         } else if (textBody) {
             const lines = textBody.replace(/\r/g, '').split('\n');
             const mainMessage = [];
@@ -204,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const mainPre = document.createElement('pre');
             mainPre.textContent = mainMessage.join('\n').trim();
-            emailContent.appendChild(mainPre);
+            targetElement.appendChild(mainPre);
 
             if (quotedBlock.length > 0) {
                 const details = document.createElement('details');
@@ -216,10 +246,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 quotedPre.textContent = quotedBlock.join('\n');
                 details.appendChild(summary);
                 details.appendChild(quotedPre);
-                emailContent.appendChild(details);
+                targetElement.appendChild(details);
             }
         } else {
-            emailContent.innerHTML = '<pre>Could not display email content.</pre>';
+            targetElement.innerHTML = '<pre>Could not display email content.</pre>';
         }
     }
 });
