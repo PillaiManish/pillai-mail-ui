@@ -70,8 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchConversations() {
         try {
             const token = localStorage.getItem('jwt');
-            // *** FIX: Corrected the endpoint from /conversations to /emails ***
-            const response = await fetch(`${API_URL}/emails`, {
+            const response = await fetch(`${API_URL}/conversations`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
 
@@ -106,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const participants = document.createElement('div');
             participants.className = 'email-participants';
-            // A real implementation would be more robust
             participants.textContent = convo.emails[0]?.from || 'Unknown Sender';
 
             li.appendChild(subject);
@@ -133,13 +131,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const body = document.createElement('div');
             body.className = 'email-thread-body';
+            body.style.display = 'none';
+            body.innerHTML = '<p><i>Click to load content...</i></p>';
+
+            header.addEventListener('click', () => {
+                if (body.style.display === 'none') {
+                    body.style.display = 'block';
+                    // Only fetch if content hasn't been loaded
+                    if (!body.dataset.loaded) {
+                        body.innerHTML = '<p><i>Loading...</i></p>';
+                        fetchEmailContent(email.ID, body);
+                        body.dataset.loaded = 'true';
+                    }
+                } else {
+                    body.style.display = 'none';
+                }
+            });
 
             emailContainer.appendChild(header);
             emailContainer.appendChild(body);
             emailViewContainer.appendChild(emailContainer);
-
-            // Fetch and render the body for each email
-            fetchEmailContent(email.ID, body);
         });
     }
 
@@ -154,100 +165,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Failed to fetch email content.');
             }
 
-            const rawEmail = await response.text();
-            renderEmail(rawEmail, targetElement);
+            const emailBody = await response.json();
+            renderEmail(emailBody, targetElement);
         } catch (error) {
             console.error('Error fetching or rendering email:', error);
             targetElement.innerHTML = '<p>Could not load email content.</p>';
         }
     }
 
-    function renderEmail(rawEmail, targetElement) {
+    function renderEmail(emailBody, targetElement) {
         targetElement.innerHTML = ''; // Clear previous content
 
-        function escapeRegex(string) {
-            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        }
-
-        function decodeQuotedPrintable(input) {
-            if (!input) return '';
-            return input
-                .replace(/=\r?\n/g, '') // Remove soft line breaks
-                .replace(/=([0-9A-F]{2})/g, (match, hex) => String.fromCharCode(parseInt(hex, 16)));
-        }
-
-        function getPartBody(part) {
-            const encodingMatch = part.match(/Content-Transfer-Encoding: (.*)/i);
-            const encoding = encodingMatch ? encodingMatch[1].trim().toLowerCase() : '';
-            const bodyStartIndex = part.indexOf('\r\n\r\n');
-            if (bodyStartIndex === -1) return '';
-            let body = part.substring(bodyStartIndex + 4);
-            if (encoding === 'quoted-printable') {
-                return decodeQuotedPrintable(body);
-            }
-            return body;
-        }
-
-        const boundaryMatch = rawEmail.match(/boundary="?([^\s"]+)"?/i);
-        let htmlBody = '';
-        let textBody = '';
-
-        if (boundaryMatch) {
-            const boundary = boundaryMatch[1];
-            const escapedBoundary = escapeRegex(boundary);
-            const parts = rawEmail.split(new RegExp(`--${escapedBoundary}(--)?`));
-            
-            const htmlPart = parts.find(p => p && p.includes('Content-Type: text/html'));
-            const textPart = parts.find(p => p && p.includes('Content-Type: text/plain'));
-
-            if (htmlPart) htmlBody = getPartBody(htmlPart);
-            if (textPart) textBody = getPartBody(textPart);
-        } else {
-            textBody = getPartBody(rawEmail);
-        }
-
-        if (htmlBody) {
+        if (emailBody.html_body) {
             const iframe = document.createElement('iframe');
             iframe.setAttribute('sandbox', 'allow-same-origin');
-            iframe.srcdoc = htmlBody;
+            iframe.srcdoc = emailBody.html_body;
             iframe.style.width = '100%';
             iframe.style.height = '400px'; // Give a fixed height for now
             iframe.style.border = 'none';
             targetElement.appendChild(iframe);
-        } else if (textBody) {
-            const lines = textBody.replace(/\r/g, '').split('\n');
-            const mainMessage = [];
-            const quotedBlock = [];
-            let inQuotedBlock = false;
-            const quoteHeaderRegex = /On .* wrote:/;
-
-            for (const line of lines) {
-                if (quoteHeaderRegex.test(line) || line.startsWith('>')) {
-                    inQuotedBlock = true;
-                }
-                if (inQuotedBlock) {
-                    quotedBlock.push(line);
-                } else {
-                    mainMessage.push(line);
-                }
-            }
-
-            const mainPre = document.createElement('pre');
-            mainPre.textContent = mainMessage.join('\n').trim();
-            targetElement.appendChild(mainPre);
-
-            if (quotedBlock.length > 0) {
-                const details = document.createElement('details');
-                const summary = document.createElement('summary');
-                summary.textContent = '...';
-                summary.className = 'quoted-summary';
-                const quotedPre = document.createElement('pre');
-                quotedPre.className = 'quoted-text';
-                quotedPre.textContent = quotedBlock.join('\n');
-                details.appendChild(summary);
-                details.appendChild(quotedPre);
-                targetElement.appendChild(details);
-            }
+        } else if (emailBody.text_body) {
+            const pre = document.createElement('pre');
+            pre.textContent = emailBody.text_body;
+            targetElement.appendChild(pre);
         } else {
             targetElement.innerHTML = '<pre>Could not display email content.</pre>';
         }
